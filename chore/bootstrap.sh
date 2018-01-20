@@ -29,5 +29,4 @@ else
 fi
 
 etcd --version
-etcdctl version
 echo done
