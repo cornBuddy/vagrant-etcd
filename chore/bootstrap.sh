@@ -24,6 +24,7 @@ else
     echo setting up path
     ln -sf "$ETCD_PATH/etcd" /bin/etcd
     ln -sf "$ETCD_PATH/etcdctl" /bin/etcdctl
+    echo "ETCDCTL_API=3" >> /etc/profile
     echo checking instalation
 fi
 
