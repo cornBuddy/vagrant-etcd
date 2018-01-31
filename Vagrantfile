@@ -18,6 +18,11 @@ ETCD_INITIAL_CLUSTER = ETCD_CLUSTERS
       ":#{ETCD_SERVER_PORT}"
   end
   .join(",")
+ETCD_ENDPOINTS = ETCD_CLUSTERS
+  .map do |cluster_config|
+    "http://#{cluster_config[:ip_addr]}:#{ETCD_CLIENT_PORT}"
+  end
+  .join(",")
 
 Vagrant.configure("2") do |config|
   ETCD_CLUSTERS.each do |cluster_config|
@@ -28,6 +33,7 @@ Vagrant.configure("2") do |config|
       env = {
         "ETCD_IP" => cluster_config[:ip_addr],
         "ETCD_NAME" => cluster_config[:name],
+        "ETCD_ENDPOINTS" => ETCD_ENDPOINTS,
         "ETCD_SERVER_PORT" => ETCD_SERVER_PORT,
         "ETCD_CLIENT_PORT" => ETCD_CLIENT_PORT,
         "ETCD_INITIAL_CLUSTER_TOKEN" => ETCD_INITIAL_CLUSTER_TOKEN,

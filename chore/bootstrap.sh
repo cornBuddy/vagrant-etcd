@@ -8,12 +8,14 @@ DOWNLOAD_URL="$GITHUB_ETCD/$ETCD_VER/etcd-$ETCD_VER-linux-amd64.tar.gz"
 ETCD_ARCHIVE=/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz
 ETCD_PATH=/opt/etcd
 ETCD_CONFIG_PATH=/etc/etcd/etcd.conf
-ETCD_HOME=/var/lib/etcd/
-ETCD_DATA_DIR="$ETCD_HOME/default.etcd"
+ETCD_HOME=/var/lib/etcd
+ETCD_BACKUP="$ETCD_HOME/snapshot.db"
+ETCD_DATA_DIR="$ETCD_HOME/$ETCD_NAME.etcd"
 ETCD_SERVICE_PATH=/etc/systemd/system/etcd.service
 
 ETCD_SERVER="http://$ETCD_IP:$ETCD_SERVER_PORT"
 ETCD_CLIENT="http://$ETCD_IP:$ETCD_CLIENT_PORT"
+
 read -r -d '' ETCD_ENV << EOF || true
 # [member]
 ETCD_NAME=$ETCD_NAME
@@ -30,7 +32,7 @@ EOF
 
 read -r -d '' ETCD_SERVICE << EOF || true
 [Unit]
-Description=etcd
+Description=etcd cluster
 Documentation=https://github.com/coreos/etcd
 After=network.target
 
@@ -46,6 +48,49 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
+EOF
+
+read -r -d '' ETCD_BACKUP_SERVICE << EOF || true
+[Unit]
+Description=etcd backup
+After=etcd.service
+
+[Service]
+Type=oneshot
+User=etcd
+ExecStart=/usr/bin/etcd-backup
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+read -r -d '' ETCD_BACKUP_SERVICE_TIMER << EOF || true
+[Unit]
+Description=etcd backup hourly timer
+
+[Timer]
+OnUnitActiveSec=0min
+OnCalendar=*-*-* *:00:00
+Persistent=true
+EOF
+
+read -r -d '' ETCD_BACKUP_SCRIPT << EOF || true
+#!/bin/sh -
+ETCDCTL_API=3 $ETCD_PATH/etcdctl --endpoints $ETCD_ENDPOINTS \\
+    snapshot save $ETCD_BACKUP
+EOF
+
+read -r -d '' ETCD_RESTORE_SCRIPT << EOF || true
+#!/bin/sh -
+cd $ETCD_HOME
+rm -rf $ETCD_DATA_DIR
+ETCDCTL_API=3 $ETCD_PATH/etcdctl snapshot restore $ETCD_BACKUP \\
+    --name $ETCD_NAME \\
+    --initial-cluster $ETCD_INITIAL_CLUSTER \\
+    --initial-cluster-token $ETCD_INITIAL_CLUSTER_TOKEN \\
+    --initial-advertise-peer-urls $ETCD_SERVER \\
+    --skip-hash-check
 EOF
 
 is_etcd_installed() {
@@ -69,9 +114,6 @@ configure_etcd_service() {
     echo "$ETCD_ENV" > $ETCD_CONFIG_PATH
     echo "$ETCD_SERVICE" > $ETCD_SERVICE_PATH
     systemctl daemon-reload
-}
-
-enable_etcd_service() {
     echo enabling and starting etcd service
     systemctl enable --no-block etcd.service
     systemctl start --no-block etcd.service
@@ -88,7 +130,7 @@ install_and_configure_etcd() {
     echo setting up path
     ln -sf "$ETCD_PATH/etcd" /bin/etcd
     ln -sf "$ETCD_PATH/etcdctl" /bin/etcdctl
-    echo "export ETCDCTL_API=3" >> /etc/profile
+    echo "export ETCDCTL_API=3" >> /etc/environment
     echo basic configuration
     mkdir $ETCD_HOME
     mkdir /etc/etcd
@@ -96,10 +138,24 @@ install_and_configure_etcd() {
     useradd --system \
         --gid etcd \
         --home-dir $ETCD_HOME \
-        --shell /sbin/nologin \
+        --shell /bin/bash \
         --comment "etcd user" \
         etcd
     chown -R etcd:etcd $ETCD_HOME
+}
+
+generate_distaster_scripts() {
+    echo generating backup scripts
+    echo "$ETCD_BACKUP_SCRIPT" > /usr/bin/etcd-backup
+    chmod +x /usr/bin/etcd-backup
+    echo "$ETCD_RESTORE_SCRIPT" > /usr/bin/etcd-restore
+    chmod +x /usr/bin/etcd-restore
+    echo creating backup service
+    echo "$ETCD_BACKUP_SERVICE" > /etc/systemd/system/etcd-backup.service
+    echo "$ETCD_BACKUP_SERVICE_TIMER" > /etc/systemd/system/etcd-backup.timer
+    systemctl daemon-reload
+    systemctl enable --no-block etcd-backup.service
+    systemctl start --no-block etcd-backup.service
 }
 
 if is_etcd_installed; then
@@ -112,5 +168,6 @@ if is_etcd_service_created; then
     echo etcd service created
 else
     configure_etcd_service
-    enable_etcd_service
 fi
+
+generate_distaster_scripts
