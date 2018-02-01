@@ -156,6 +156,8 @@ generate_distaster_scripts() {
     systemctl daemon-reload
     systemctl enable --no-block etcd-backup.service
     systemctl start --no-block etcd-backup.service
+    systemctl enable etcd-backup.timer
+    systemctl start etcd-backup.timer
 }
 
 if is_etcd_installed; then
