@@ -40,7 +40,7 @@ Vagrant.configure("2") do |config|
         "ETCD_INITIAL_CLUSTER" => ETCD_INITIAL_CLUSTER,
         "ETCD_INITIAL_CLUSTER_STATE" => ETCD_INITIAL_CLUSTER_STATE,
       }
-      cluster.vm.provision :shell, path: "chore/bootstrap.sh",
+      cluster.vm.provision :shell, path: "chore/install-and-configure-etcd.sh",
         keep_color: false, env: env
     end
   end
