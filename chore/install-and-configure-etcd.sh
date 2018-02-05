@@ -2,13 +2,18 @@
 
 set -e
 
+
+if [ -z "$1" ]; then
+    echo no ip list provided
+    exit 2
+fi
+
 ETCD_VER=v3.2.14
 GITHUB_ETCD=https://github.com/coreos/etcd/releases/download
 DOWNLOAD_URL="$GITHUB_ETCD/$ETCD_VER/etcd-$ETCD_VER-linux-amd64.tar.gz"
 ETCD_ARCHIVE=/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz
 ETCD_PATH=/opt/etcd
 ETCD_CONFIG_PATH=/etc/etcd/etcd.conf
-ETCD_HOME=/var/lib/etcd
 ETCD_BACKUP="$ETCD_HOME/snapshot.db"
 ETCD_DATA_DIR="$ETCD_HOME/$ETCD_NAME.etcd"
 ETCD_SERVICE_PATH=/etc/systemd/system/etcd.service
@@ -83,7 +88,18 @@ EOF
 
 read -r -d '' ETCD_RESTORE_SCRIPT << EOF || true
 #!/bin/sh -
+ips=\`echo "$1" | tr "," "\n"\`
+for ip in \$ips; do
+    echo connecting to \$ip
+    sshpass -p etcd ssh etcd@\$ip "/usr/bin/etcd-restore-member"
+done
+EOF
+
+read -r -d '' ETCD_RESTORE_MEMBER_SCRIPT << EOF || true
+#!/bin/sh -
 cd $ETCD_HOME
+echo restoring $ETCD_NAME
+sudo systemctl stop etcd.service
 rm -rf $ETCD_DATA_DIR
 ETCDCTL_API=3 $ETCD_PATH/etcdctl snapshot restore $ETCD_BACKUP \\
     --name $ETCD_NAME \\
@@ -91,6 +107,7 @@ ETCDCTL_API=3 $ETCD_PATH/etcdctl snapshot restore $ETCD_BACKUP \\
     --initial-cluster-token $ETCD_INITIAL_CLUSTER_TOKEN \\
     --initial-advertise-peer-urls $ETCD_SERVER \\
     --skip-hash-check
+sudo systemctl start --no-block etcd.service
 EOF
 
 is_etcd_installed() {
@@ -111,6 +128,7 @@ is_etcd_service_created() {
 
 configure_etcd_service() {
     echo creating etcd service
+    mkdir -p /etc/etcd
     echo "$ETCD_ENV" > $ETCD_CONFIG_PATH
     echo "$ETCD_SERVICE" > $ETCD_SERVICE_PATH
     systemctl daemon-reload
@@ -119,7 +137,7 @@ configure_etcd_service() {
     systemctl start --no-block etcd.service
 }
 
-install_and_configure_etcd() {
+install_etcd() {
     echo downloading etcd archive
     curl -L $DOWNLOAD_URL -o $ETCD_ARCHIVE &> /dev/null
     mkdir $ETCD_PATH
@@ -131,25 +149,16 @@ install_and_configure_etcd() {
     ln -sf "$ETCD_PATH/etcd" /bin/etcd
     ln -sf "$ETCD_PATH/etcdctl" /bin/etcdctl
     echo "export ETCDCTL_API=3" >> /etc/environment
-    echo basic configuration
-    mkdir $ETCD_HOME
-    mkdir /etc/etcd
-    groupadd --system etcd
-    useradd --system \
-        --gid etcd \
-        --home-dir $ETCD_HOME \
-        --shell /bin/bash \
-        --comment "etcd user" \
-        etcd
-    chown -R etcd:etcd $ETCD_HOME
 }
 
 generate_distaster_scripts() {
     echo generating backup scripts
     echo "$ETCD_BACKUP_SCRIPT" > /usr/bin/etcd-backup
     chmod +x /usr/bin/etcd-backup
-    echo "$ETCD_RESTORE_SCRIPT" > /usr/bin/etcd-restore
-    chmod +x /usr/bin/etcd-restore
+    echo "$ETCD_RESTORE_SCRIPT" > /usr/bin/etcd-restore-cluster
+    echo "$ETCD_RESTORE_MEMBER_SCRIPT" > /usr/bin/etcd-restore-member
+    chmod +x /usr/bin/etcd-restore-cluster
+    chmod +x /usr/bin/etcd-restore-member
     echo creating backup service
     echo "$ETCD_BACKUP_SERVICE" > /etc/systemd/system/etcd-backup.service
     echo "$ETCD_BACKUP_SERVICE_TIMER" > /etc/systemd/system/etcd-backup.timer
@@ -163,7 +172,7 @@ generate_distaster_scripts() {
 if is_etcd_installed; then
     echo etcd is installed
 else
-    install_and_configure_etcd
+    install_etcd
 fi
 
 if is_etcd_service_created; then

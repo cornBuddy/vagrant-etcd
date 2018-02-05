@@ -7,6 +7,7 @@ ETCD_SERVER_PORT = "2380"
 ETCD_CLIENT_PORT = "2379"
 ETCD_INITIAL_CLUSTER_TOKEN = "etcd-cluster"
 ETCD_INITIAL_CLUSTER_STATE = "new"
+ETCD_HOME="/var/lib/etcd"
 ETCD_CLUSTERS = [
   { name: "infra1", ip_addr: "192.168.0.11" },
   { name: "infra2", ip_addr: "192.168.0.12" },
@@ -23,6 +24,9 @@ ETCD_ENDPOINTS = ETCD_CLUSTERS
     "http://#{cluster_config[:ip_addr]}:#{ETCD_CLIENT_PORT}"
   end
   .join(",")
+ip_list = ETCD_CLUSTERS
+  .map { |c| c[:ip_addr] }
+  .join(",")
 
 Vagrant.configure("2") do |config|
   ETCD_CLUSTERS.each do |cluster_config|
@@ -30,6 +34,9 @@ Vagrant.configure("2") do |config|
       cluster.vm.network "private_network", ip: cluster_config[:ip_addr]
       cluster.vm.box = VM_BOX
       cluster.vm.box_version = BOX_VERSION
+      cluster.vm.provision :shell, path: "chore/system-bootstrap.sh",
+        env: { "ETCD_HOME" => ETCD_HOME }, run: "always"
+      cluster.vm.provision :shell, path: "chore/setup-ssh.sh", run: "always"
       env = {
         "ETCD_IP" => cluster_config[:ip_addr],
         "ETCD_NAME" => cluster_config[:name],
@@ -39,9 +46,10 @@ Vagrant.configure("2") do |config|
         "ETCD_INITIAL_CLUSTER_TOKEN" => ETCD_INITIAL_CLUSTER_TOKEN,
         "ETCD_INITIAL_CLUSTER" => ETCD_INITIAL_CLUSTER,
         "ETCD_INITIAL_CLUSTER_STATE" => ETCD_INITIAL_CLUSTER_STATE,
+        "ETCD_HOME" => ETCD_HOME,
       }
       cluster.vm.provision :shell, path: "chore/install-and-configure-etcd.sh",
-        keep_color: false, env: env
+        env: env, args: ip_list, run: "always"
     end
   end
 end
