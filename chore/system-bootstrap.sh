@@ -18,6 +18,7 @@ else
         --comment "etcd user" \
         etcd
     echo etcd:etcd | chpasswd
+    echo root:root | chpasswd
     chown -R etcd:etcd $ETCD_HOME
     echo configuring sudo
     s1="Cmnd_Alias ETCD ="

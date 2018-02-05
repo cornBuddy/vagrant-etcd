@@ -8,6 +8,8 @@ if [ -z "$1" ]; then
     exit 2
 fi
 
+SSH_OPTS="-o \"StrictHostKeyChecking=no\""
+
 ETCD_VER=v3.2.14
 GITHUB_ETCD=https://github.com/coreos/etcd/releases/download
 DOWNLOAD_URL="$GITHUB_ETCD/$ETCD_VER/etcd-$ETCD_VER-linux-amd64.tar.gz"
@@ -90,8 +92,14 @@ read -r -d '' ETCD_RESTORE_SCRIPT << EOF || true
 #!/bin/sh -
 ips=\`echo "$1" | tr "," "\n"\`
 for ip in \$ips; do
-    echo connecting to \$ip
-    sshpass -p etcd ssh etcd@\$ip "/usr/bin/etcd-restore-member"
+    echo restoring home dir on \$ip
+    sshpass -p root ssh $SSH_OPTS root@\$ip "mkdir -p $ETCD_HOME"
+    echo copying snapshot to \$ip
+    sshpass -p root scp $SSH_OPTS $ETCD_BACKUP root@\$ip:$ETCD_BACKUP
+    echo running restore member script on \$ip
+    sshpass -p root ssh $SSH_OPTS root@\$ip "/usr/bin/etcd-restore-member"
+    echo starting etcd.service on \$ip
+    sshpass -p root ssh $SSH_OPTS root@\$ip "systemctl --no-block start etcd.service"
 done
 EOF
 
@@ -99,7 +107,8 @@ read -r -d '' ETCD_RESTORE_MEMBER_SCRIPT << EOF || true
 #!/bin/sh -
 cd $ETCD_HOME
 echo restoring $ETCD_NAME
-sudo systemctl stop etcd.service
+systemctl stop etcd.service
+mkdir -p $ETCD_HOME
 rm -rf $ETCD_DATA_DIR
 ETCDCTL_API=3 $ETCD_PATH/etcdctl snapshot restore $ETCD_BACKUP \\
     --name $ETCD_NAME \\
@@ -107,7 +116,7 @@ ETCDCTL_API=3 $ETCD_PATH/etcdctl snapshot restore $ETCD_BACKUP \\
     --initial-cluster-token $ETCD_INITIAL_CLUSTER_TOKEN \\
     --initial-advertise-peer-urls $ETCD_SERVER \\
     --skip-hash-check
-sudo systemctl start --no-block etcd.service
+chown -R etcd:etcd $ETCD_HOME
 EOF
 
 is_etcd_installed() {
