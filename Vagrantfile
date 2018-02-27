@@ -30,6 +30,8 @@ IP_LIST = ETCD_CLUSTERS
   .map { |c| c[:ip_addr] }
   .join(",")
 
+FRONTEND = { name: "frontend", ip_addr: "192.168.0.20" }
+
 def install_and_configure_etcd(cluster, cluster_config)
   cluster.vm.network "private_network", ip: cluster_config[:ip_addr]
   cluster.vm.box = VM_BOX
@@ -70,5 +72,14 @@ Vagrant.configure("2") do |config|
       cluster.vm.provision :shell, path: "chore/configure-etcd-policies.sh",
         env: { "ROOT_PWD" => ETCD_ROOT_PWD }
     end
+  end
+
+  config.vm.define FRONTEND[:name] do |frontend|
+    frontend.vm.network "private_network", ip: FRONTEND[:ip_addr]
+    frontend.vm.box = VM_BOX
+    frontend.vm.box_version = BOX_VERSION
+    frontend.vm.provision :shell, path: "chore/run-e3w.sh", run: "always",
+      args: ETCD_ENDPOINTS
+    frontend.vm.network "forwarded_port", guest: 8080, host: 8080
   end
 end
