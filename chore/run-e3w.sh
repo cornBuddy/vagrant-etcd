@@ -85,4 +85,5 @@ nginx -s reload
 
 echo starting e3w
 cd ../
+docker-compose kill
 docker-compose up -d --no-recreate &> /dev/null

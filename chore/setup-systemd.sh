@@ -89,6 +89,9 @@ EOF
 
 read -r -d '' ETCD_RESTORE_SCRIPT << EOF || true
 #!/bin/sh -
+echo taking snapshot from current machine
+systemctl stop etcd-backup.service
+systemctl start etcd-backup.service
 ips=\`echo "$1" | tr "," "\n"\`
 for ip in \$ips; do
     echo restoring home dir on \$ip
@@ -100,6 +103,9 @@ for ip in \$ips; do
     echo starting etcd.service on \$ip
     sshpass -p root ssh $SSH_OPTS root@\$ip "systemctl --no-block start etcd.service"
 done
+
+sshpass -p root ssh $SSH_OPTS root@$2 "cd /data/e3w && docker-compose kill"
+sshpass -p root ssh $SSH_OPTS root@$2 "cd /data/e3w && docker-compose up -d --no-recreate"
 EOF
 
 read -r -d '' ETCD_BACKUP_SCRIPT << EOF || true

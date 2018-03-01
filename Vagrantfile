@@ -55,7 +55,7 @@ def install_and_configure_etcd(cluster, cluster_config)
     "ROOT_PWD" => ETCD_ROOT_PWD,
   }
   cluster.vm.provision :shell, path: "chore/setup-systemd.sh",
-    env: env, args: IP_LIST, run: "always"
+    env: env, args: [IP_LIST, FRONTEND[:ip_addr]], run: "always"
   yield if block_given?
 end
 
@@ -78,6 +78,9 @@ Vagrant.configure("2") do |config|
     frontend.vm.network "private_network", ip: FRONTEND[:ip_addr]
     frontend.vm.box = VM_BOX
     frontend.vm.box_version = BOX_VERSION
+    frontend.vm.provision :shell, inline: "echo root:root | chpasswd",
+      run: "always"
+    frontend.vm.provision :shell, path: "chore/setup-ssh.sh", run: "always"
     frontend.vm.provision :shell, path: "chore/run-e3w.sh", run: "always",
       args: ETCD_ENDPOINTS
     frontend.vm.network "forwarded_port", guest: 80, host: 8080
